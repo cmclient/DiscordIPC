@@ -16,16 +16,15 @@
 
 package com.jagrosh.discordipc.entities.pipe;
 
+import com.google.gson.JsonObject;
 import com.jagrosh.discordipc.IPCClient;
 import com.jagrosh.discordipc.IPCListener;
 import com.jagrosh.discordipc.entities.Callback;
 import com.jagrosh.discordipc.entities.DiscordBuild;
 import com.jagrosh.discordipc.entities.Packet;
 import com.jagrosh.discordipc.exceptions.NoDiscordClientException;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -33,7 +32,7 @@ import java.util.UUID;
 
 public abstract class Pipe {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(Pipe.class);
+    private static final Logger LOGGER = LogManager.getLogger(Pipe.class);
     private static final int VERSION = 1;
     PipeStatus status = PipeStatus.CONNECTING;
     IPCListener listener;
@@ -66,13 +65,27 @@ public abstract class Pipe {
                 LOGGER.debug(String.format("Searching for IPC: %s", location));
                 pipe = createPipe(ipcClient, callbacks, location);
 
-                pipe.send(Packet.OpCode.HANDSHAKE, new JSONObject().put("v", VERSION).put("client_id", Long.toString(clientId)), null);
+                JsonObject handshakeJson = new JsonObject();
+                handshakeJson.addProperty("v", VERSION);
+                handshakeJson.addProperty("client_id", Long.toString(clientId));
+                pipe.send(Packet.OpCode.HANDSHAKE, handshakeJson, null);
 
                 Packet p = pipe.read(); // this is a valid client at this point
 
-                pipe.build = DiscordBuild.from(p.getJson().getJSONObject("data")
-                        .getJSONObject("config")
-                        .getString("api_endpoint"));
+                JsonObject json = p.getJson();
+                String apiEndpoint = DiscordBuild.ANY.name();
+
+                if (json.has("data")) {
+                    JsonObject data = json.getAsJsonObject("data");
+                    if (data.has("config")) {
+                        JsonObject config = data.getAsJsonObject("config");
+                        if (config.has("api_endpoint")) {
+                            apiEndpoint = config.get("api_endpoint").getAsString();
+                        }
+                    }
+                }
+
+                pipe.build = DiscordBuild.from(apiEndpoint);
 
                 LOGGER.debug(String.format("Found a valid client (%s) with packet: %s", pipe.build.name(), p.toString()));
                 // we're done if we found our first choice
@@ -88,7 +101,7 @@ public abstract class Pipe {
                 pipe.build = null;
                 pipe = null;
             }
-            catch(IOException | JSONException ex)
+            catch(Exception ex)
             {
                 pipe = null;
             }
@@ -128,7 +141,7 @@ public abstract class Pipe {
                 throw new NoDiscordClientException();
             }
         }
-        // close unused files, except skip 'any' because its always a duplicate
+        // close unused files, except skip 'any' because it's always a duplicate
         for(int i = 0; i < open.length; i++)
         {
             if(i == DiscordBuild.ANY.ordinal())
@@ -137,7 +150,7 @@ public abstract class Pipe {
             {
                 try {
                     open[i].close();
-                } catch(IOException ex) {
+                } catch(Exception ex) {
                     // This isn't really important to applications and better
                     // as debug info
                     LOGGER.debug("Failed to close an open IPC pipe!", ex);
@@ -180,12 +193,13 @@ public abstract class Pipe {
      * @param data The data to send.
      * @param callback callback for the response
      */
-    public void send(Packet.OpCode op, JSONObject data, Callback callback)
+    public void send(Packet.OpCode op, JsonObject data, Callback callback)
     {
         try
         {
             String nonce = generateNonce();
-            Packet p = new Packet(op, data.put("nonce",nonce));
+            data.addProperty("nonce", nonce);
+            Packet p = new Packet(op, data);
             if(callback!=null && !callback.isEmpty())
                 callbacks.put(nonce, callback);
             write(p.toBytes());
@@ -208,10 +222,8 @@ public abstract class Pipe {
      *
      * @throws IOException
      *         If the pipe breaks.
-     * @throws JSONException
-     *         If the read thread receives bad data.
      */
-    public abstract Packet read() throws IOException, JSONException;
+    public abstract Packet read() throws IOException;
 
     public abstract void write(byte[] b) throws IOException;
 

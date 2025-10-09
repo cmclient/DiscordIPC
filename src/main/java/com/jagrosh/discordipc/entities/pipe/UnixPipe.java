@@ -16,26 +16,28 @@
 
 package com.jagrosh.discordipc.entities.pipe;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import com.jagrosh.discordipc.IPCClient;
 import com.jagrosh.discordipc.entities.Callback;
 import com.jagrosh.discordipc.entities.Packet;
-import org.json.JSONException;
-import org.json.JSONObject;
+import com.jagrosh.discordipc.entities.serialize.PacketDeserializer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.newsclub.net.unix.AFUNIXSocket;
 import org.newsclub.net.unix.AFUNIXSocketAddress;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.file.Paths;
 import java.util.HashMap;
 
 public class UnixPipe extends Pipe
 {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(UnixPipe.class);
+    private static final Logger LOGGER = LogManager.getLogger(UnixPipe.class);
     private final AFUNIXSocket socket;
 
     UnixPipe(IPCClient ipcClient, HashMap<String, Callback> callbacks, String location) throws IOException
@@ -43,12 +45,12 @@ public class UnixPipe extends Pipe
         super(ipcClient, callbacks);
 
         socket = AFUNIXSocket.newInstance();
-        socket.connect(AFUNIXSocketAddress.of(Paths.get(location)));
+        socket.connect(new AFUNIXSocketAddress(new File(location)));
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
     @Override
-    public Packet read() throws IOException, JSONException
+    public Packet read() throws IOException
     {
         InputStream is = socket.getInputStream();
 
@@ -80,7 +82,13 @@ public class UnixPipe extends Pipe
         d = new byte[Integer.reverseBytes(bb.getInt())];
 
         is.read(d);
-        Packet p = new Packet(op, new JSONObject(new String(d)));
+
+        Gson gson = new GsonBuilder()
+                .registerTypeAdapter(Packet.class, new PacketDeserializer(op))
+                .create();
+        JsonObject jsonObject = gson.fromJson(new String(d), JsonObject.class);
+        Packet p = gson.fromJson(jsonObject, Packet.class);
+
         LOGGER.debug(String.format("Received packet: %s", p.toString()));
         if(listener != null)
             listener.onPacketReceived(ipcClient, p);
@@ -97,7 +105,7 @@ public class UnixPipe extends Pipe
     public void close() throws IOException
     {
         LOGGER.debug("Closing IPC pipe...");
-        send(Packet.OpCode.CLOSE, new JSONObject(), null);
+        send(Packet.OpCode.CLOSE, new JsonObject(), null);
         status = PipeStatus.CLOSED;
         socket.close();
     }

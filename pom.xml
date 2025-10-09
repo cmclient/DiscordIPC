@@ -3,29 +3,30 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.jagrosh</groupId>
     <artifactId>DiscordIPC</artifactId>
-    <version>0.4</version>
+    <version>2.0.1</version>
     <packaging>jar</packaging>
     
     <dependencies>
+        <!-- https://mvnrepository.com/artifact/org.apache.logging.log4j/log4j-core -->
         <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>20230227</version>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.20.0</version>
         </dependency>
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>2.0.7</version>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.8.9</version>
         </dependency>
         <dependency>
             <groupId>com.kohlschutter.junixsocket</groupId>
-            <artifactId>junixsocket-common</artifactId>
-            <version>2.6.2</version>
+            <artifactId>junixsocket-core</artifactId>
+            <version>2.9.0</version>
         </dependency>
         <dependency>
             <groupId>com.kohlschutter.junixsocket</groupId>
             <artifactId>junixsocket-native-common</artifactId>
-            <version>2.6.2</version>
+            <version>2.9.0</version>
         </dependency>
     </dependencies>
     
@@ -34,6 +35,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
+                <version>LATEST</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -63,5 +65,5 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
     </properties>
-    <name>DiscordIPC</name>
+    <name>DiscordIPC2</name>
 </project>

@@ -16,13 +16,15 @@
 
 package com.jagrosh.discordipc.entities.pipe;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import com.jagrosh.discordipc.IPCClient;
 import com.jagrosh.discordipc.entities.Callback;
 import com.jagrosh.discordipc.entities.Packet;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.jagrosh.discordipc.entities.serialize.PacketDeserializer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -32,7 +34,7 @@ import java.util.HashMap;
 public class WindowsPipe extends Pipe
 {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(WindowsPipe.class);
+    private static final Logger LOGGER = LogManager.getLogger(WindowsPipe.class);
 
     private final RandomAccessFile file;
 
@@ -52,7 +54,13 @@ public class WindowsPipe extends Pipe
     }
 
     @Override
-    public Packet read() throws IOException, JSONException {
+    public Packet read() throws IOException {
+        if(status==PipeStatus.DISCONNECTED)
+            throw new IOException("Disconnected!");
+
+        if(status==PipeStatus.CLOSED)
+            return new Packet(Packet.OpCode.CLOSE, null);
+
         while(file.length() == 0 && status == PipeStatus.CONNECTED)
         {
             try {
@@ -60,18 +68,18 @@ public class WindowsPipe extends Pipe
             } catch(InterruptedException ignored) {}
         }
 
-        if(status==PipeStatus.DISCONNECTED)
-            throw new IOException("Disconnected!");
-
-        if(status==PipeStatus.CLOSED)
-            return new Packet(Packet.OpCode.CLOSE, null);
-
         Packet.OpCode op = Packet.OpCode.values()[Integer.reverseBytes(file.readInt())];
         int len = Integer.reverseBytes(file.readInt());
         byte[] d = new byte[len];
 
         file.readFully(d);
-        Packet p = new Packet(op, new JSONObject(new String(d)));
+
+        Gson gson = new GsonBuilder()
+                .registerTypeAdapter(Packet.class, new PacketDeserializer(op))
+                .create();
+        JsonObject jsonObject = gson.fromJson(new String(d), JsonObject.class);
+        Packet p = gson.fromJson(jsonObject, Packet.class);
+
         LOGGER.debug(String.format("Received packet: %s", p.toString()));
         if(listener != null)
             listener.onPacketReceived(ipcClient, p);
@@ -81,7 +89,7 @@ public class WindowsPipe extends Pipe
     @Override
     public void close() throws IOException {
         LOGGER.debug("Closing IPC pipe...");
-        send(Packet.OpCode.CLOSE, new JSONObject(), null);
+        send(Packet.OpCode.CLOSE, new JsonObject(), null);
         status = PipeStatus.CLOSED;
         file.close();
     }

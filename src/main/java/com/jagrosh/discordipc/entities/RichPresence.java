@@ -15,9 +15,11 @@
  */
 package com.jagrosh.discordipc.entities;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+
 import java.time.OffsetDateTime;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /**
  * An encapsulation of all data needed to properly construct a JSON RichPresence payload.
@@ -67,7 +69,7 @@ public class RichPresence
     }
 
     /**
-     * Constructs a {@link JSONObject} representing a payload to send to discord
+     * Constructs a {@link JsonObject} representing a payload to send to discord
      * to update a user's Rich Presence.
      *
      * <p>This is purely internal, and should not ever need to be called outside of
@@ -75,27 +77,69 @@ public class RichPresence
      *
      * @return A JSONObject payload for updating a user's Rich Presence.
      */
-    public JSONObject toJson()
+    public JsonObject toJson()
     {
-        return new JSONObject()
-                .put("state", state)
-                .put("details", details)
-                .put("timestamps", new JSONObject()
-                        .put("start", startTimestamp==null ? null : startTimestamp.toEpochSecond())
-                        .put("end", endTimestamp==null ? null : endTimestamp.toEpochSecond()))
-                .put("assets", new JSONObject()
-                        .put("large_image", largeImageKey)
-                        .put("large_text", largeImageText)
-                        .put("small_image", smallImageKey)
-                        .put("small_text", smallImageText))
-                .put("party", partyId==null ? null : new JSONObject()
-                        .put("id", partyId)
-                        .put("size", new JSONArray().put(partySize).put(partyMax)))
-                .put("secrets", new JSONObject()
-                        .put("join", joinSecret)
-                        .put("spectate", spectateSecret)
-                        .put("match", matchSecret))
-                .put("instance", instance);
+        JsonObject timestampsObject = new JsonObject();
+
+        if (startTimestamp != null)
+            timestampsObject.addProperty("start", startTimestamp.toEpochSecond());
+
+        if (endTimestamp != null)
+            timestampsObject.addProperty("end", endTimestamp.toEpochSecond());
+
+        JsonObject assetsObject = new JsonObject();
+
+        if (largeImageKey != null)
+            assetsObject.addProperty("large_image", largeImageKey);
+
+        if (largeImageText != null)
+            assetsObject.addProperty("large_text", largeImageText);
+
+        if (smallImageKey != null)
+            assetsObject.addProperty("small_image", smallImageKey);
+
+        if (smallImageText != null)
+            assetsObject.addProperty("small_text", smallImageText);
+
+        JsonObject partyObject = null;
+        if (partyId != null) {
+            partyObject = new JsonObject();
+            partyObject.addProperty("id", partyId);
+            JsonArray partySizeArray = new JsonArray();
+            partySizeArray.add(new JsonPrimitive(partySize));
+            partySizeArray.add(new JsonPrimitive(partyMax));
+            partyObject.add("size", partySizeArray);
+        }
+
+        JsonObject secretsObject = new JsonObject();
+
+        if (joinSecret != null)
+            secretsObject.addProperty("join", joinSecret);
+
+        if (spectateSecret != null)
+            secretsObject.addProperty("spectate", spectateSecret);
+
+        if (matchSecret != null)
+            secretsObject.addProperty("match", matchSecret);
+
+        JsonObject jsonObject = new JsonObject();
+
+        if (state != null)
+            jsonObject.addProperty("state", state);
+
+        if (details != null)
+            jsonObject.addProperty("details", details);
+
+        jsonObject.add("timestamps", timestampsObject);
+        jsonObject.add("assets", assetsObject);
+
+        if (partyObject != null)
+            jsonObject.add("party", partyObject);
+
+        jsonObject.add("secrets", secretsObject);
+        jsonObject.addProperty("instance", instance);
+
+        return jsonObject;
     }
 
     /**
