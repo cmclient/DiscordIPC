@@ -35,6 +35,7 @@ public abstract class Pipe {
     private static final Logger LOGGER = LogManager.getLogger(Pipe.class);
     private static final int VERSION = 1;
     private static final boolean IS_ON_WINDOWS = System.getProperty("os.name").contains("Win");
+    private static final boolean[] FLATHUB_OPTIONS = IS_ON_WINDOWS ? new boolean[]{false} : new boolean[]{false, true};
     PipeStatus status = PipeStatus.CONNECTING;
     IPCListener listener;
     private DiscordBuild build;
@@ -52,16 +53,15 @@ public abstract class Pipe {
         if (preferredOrder == null || preferredOrder.length == 0)
             preferredOrder = new DiscordBuild[]{DiscordBuild.ANY};
 
-        Pipe pipe = null;
-
         // store some files so we can get the preferred client
+        Pipe pipe = null;
         Pipe[] open = new Pipe[DiscordBuild.values().length];
-        IPCSerach:
+
+        pipeSearch:
         for (int i = 0; i < 10; i++) {
-            boolean[] flatpaks = IS_ON_WINDOWS ? new boolean[]{false} : new boolean[]{false, true};
-            for (boolean flatpak : flatpaks) {
+            for (boolean flathub : FLATHUB_OPTIONS) {
                 try {
-                    String location = getPipeLocation(i, flatpak);
+                    String location = getPipeLocation(i, flathub);
                     LOGGER.debug(String.format("Searching for IPC: %s", location));
                     pipe = createPipe(ipcClient, callbacks, location);
 
@@ -91,7 +91,7 @@ public abstract class Pipe {
                     // we're done if we found our first choice
                     if (pipe.build == preferredOrder[0] || DiscordBuild.ANY == preferredOrder[0]) {
                         LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
-                        break IPCSerach;
+                        break pipeSearch;
                     }
 
                     open[pipe.build.ordinal()] = pipe; // didn't find first choice yet, so store what we have
@@ -105,33 +105,33 @@ public abstract class Pipe {
             }
         }
 
-        if (pipe == null) {
-            // we already know we don't have our first pick
-            // check each of the rest to see if we have that
-            for (int i = 1; i < preferredOrder.length; i++) {
-                DiscordBuild cb = preferredOrder[i];
-                LOGGER.debug(String.format("Looking for client build: %s", cb.name()));
-                if (open[cb.ordinal()] != null) {
-                    pipe = open[cb.ordinal()];
-                    open[cb.ordinal()] = null;
-                    if (cb == DiscordBuild.ANY) // if we pulled this from the 'any' slot, we need to figure out which build it was
-                    {
-                        for (int k = 0; k < open.length; k++) {
-                            if (open[k] == pipe) {
-                                pipe.build = DiscordBuild.values()[k];
-                                open[k] = null; // we don't want to close this
-                            }
+        // we already know we don't have our first pick
+        // check each of the rest to see if we have that
+        for (int i = 1; i < preferredOrder.length; i++) {
+            DiscordBuild cb = preferredOrder[i];
+            LOGGER.debug(String.format("Looking for client build: %s", cb.name()));
+            if (open[cb.ordinal()] != null) {
+                pipe = open[cb.ordinal()];
+                open[cb.ordinal()] = null;
+                if (cb == DiscordBuild.ANY) // if we pulled this from the 'any' slot, we need to figure out which build it was
+                {
+                    for (int k = 0; k < open.length; k++) {
+                        if (open[k] == pipe) {
+                            pipe.build = DiscordBuild.values()[k];
+                            open[k] = null; // we don't want to close this
                         }
-                    } else pipe.build = cb;
+                    }
+                } else pipe.build = cb;
 
-                    LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
-                    break;
-                }
-            }
-            if (pipe == null) {
-                throw new NoDiscordClientException();
+                LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
+                break;
             }
         }
+
+        if (pipe == null) {
+            throw new NoDiscordClientException();
+        }
+
         // close unused files, except skip 'any' because it's always a duplicate
         for (int i = 0; i < open.length; i++) {
             if (i == DiscordBuild.ANY.ordinal())
