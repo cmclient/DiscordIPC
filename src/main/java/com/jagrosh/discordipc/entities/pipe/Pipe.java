@@ -34,123 +34,112 @@ public abstract class Pipe {
 
     private static final Logger LOGGER = LogManager.getLogger(Pipe.class);
     private static final int VERSION = 1;
+    private static final boolean IS_ON_WINDOWS = System.getProperty("os.name").contains("Win");
     PipeStatus status = PipeStatus.CONNECTING;
     IPCListener listener;
     private DiscordBuild build;
     final IPCClient ipcClient;
-    private final HashMap<String,Callback> callbacks;
+    private final HashMap<String, Callback> callbacks;
 
-    Pipe(IPCClient ipcClient, HashMap<String, Callback> callbacks)
-    {
+    Pipe(IPCClient ipcClient, HashMap<String, Callback> callbacks) {
         this.ipcClient = ipcClient;
         this.callbacks = callbacks;
     }
 
-    public static Pipe openPipe(IPCClient ipcClient, long clientId, HashMap<String,Callback> callbacks,
-                                DiscordBuild... preferredOrder) throws NoDiscordClientException
-    {
+    public static Pipe openPipe(IPCClient ipcClient, long clientId, HashMap<String, Callback> callbacks,
+                                DiscordBuild... preferredOrder) throws NoDiscordClientException {
 
-        if(preferredOrder == null || preferredOrder.length == 0)
+        if (preferredOrder == null || preferredOrder.length == 0)
             preferredOrder = new DiscordBuild[]{DiscordBuild.ANY};
 
         Pipe pipe = null;
 
         // store some files so we can get the preferred client
         Pipe[] open = new Pipe[DiscordBuild.values().length];
-        for(int i = 0; i < 10; i++)
-        {
-            try
-            {
-                String location = getPipeLocation(i);
-                LOGGER.debug(String.format("Searching for IPC: %s", location));
-                pipe = createPipe(ipcClient, callbacks, location);
+        IPCSerach:
+        for (int i = 0; i < 10; i++) {
+            boolean[] flatpaks = IS_ON_WINDOWS ? new boolean[]{false} : new boolean[]{false, true};
+            for (boolean flatpak : flatpaks) {
+                try {
+                    String location = getPipeLocation(i, flatpak);
+                    LOGGER.debug(String.format("Searching for IPC: %s", location));
+                    pipe = createPipe(ipcClient, callbacks, location);
 
-                JsonObject handshakeJson = new JsonObject();
-                handshakeJson.addProperty("v", VERSION);
-                handshakeJson.addProperty("client_id", Long.toString(clientId));
-                pipe.send(Packet.OpCode.HANDSHAKE, handshakeJson, null);
+                    JsonObject handshakeJson = new JsonObject();
+                    handshakeJson.addProperty("v", VERSION);
+                    handshakeJson.addProperty("client_id", Long.toString(clientId));
+                    pipe.send(Packet.OpCode.HANDSHAKE, handshakeJson, null);
 
-                Packet p = pipe.read(); // this is a valid client at this point
+                    Packet p = pipe.read(); // this is a valid client at this point
 
-                JsonObject json = p.getJson();
-                String apiEndpoint = DiscordBuild.ANY.name();
+                    JsonObject json = p.getJson();
+                    String apiEndpoint = DiscordBuild.ANY.name();
 
-                if (json.has("data")) {
-                    JsonObject data = json.getAsJsonObject("data");
-                    if (data.has("config")) {
-                        JsonObject config = data.getAsJsonObject("config");
-                        if (config.has("api_endpoint")) {
-                            apiEndpoint = config.get("api_endpoint").getAsString();
+                    if (json.has("data")) {
+                        JsonObject data = json.getAsJsonObject("data");
+                        if (data.has("config")) {
+                            JsonObject config = data.getAsJsonObject("config");
+                            if (config.has("api_endpoint")) {
+                                apiEndpoint = config.get("api_endpoint").getAsString();
+                            }
                         }
                     }
+
+                    pipe.build = DiscordBuild.from(apiEndpoint);
+
+                    LOGGER.debug(String.format("Found a valid client (%s) with packet: %s", pipe.build.name(), p.toString()));
+                    // we're done if we found our first choice
+                    if (pipe.build == preferredOrder[0] || DiscordBuild.ANY == preferredOrder[0]) {
+                        LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
+                        break IPCSerach;
+                    }
+
+                    open[pipe.build.ordinal()] = pipe; // didn't find first choice yet, so store what we have
+                    open[DiscordBuild.ANY.ordinal()] = pipe; // also store in 'any' for use later
+
+                    pipe.build = null;
+                    pipe = null;
+                } catch (Exception ex) {
+                    pipe = null;
                 }
-
-                pipe.build = DiscordBuild.from(apiEndpoint);
-
-                LOGGER.debug(String.format("Found a valid client (%s) with packet: %s", pipe.build.name(), p.toString()));
-                // we're done if we found our first choice
-                if(pipe.build == preferredOrder[0] || DiscordBuild.ANY == preferredOrder[0])
-                {
-                    LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
-                    break;
-                }
-
-                open[pipe.build.ordinal()] = pipe; // didn't find first choice yet, so store what we have
-                open[DiscordBuild.ANY.ordinal()] = pipe; // also store in 'any' for use later
-
-                pipe.build = null;
-                pipe = null;
-            }
-            catch(Exception ex)
-            {
-                pipe = null;
             }
         }
 
-        if(pipe == null)
-        {
+        if (pipe == null) {
             // we already know we don't have our first pick
             // check each of the rest to see if we have that
-            for(int i = 1; i < preferredOrder.length; i++)
-            {
+            for (int i = 1; i < preferredOrder.length; i++) {
                 DiscordBuild cb = preferredOrder[i];
                 LOGGER.debug(String.format("Looking for client build: %s", cb.name()));
-                if(open[cb.ordinal()] != null)
-                {
+                if (open[cb.ordinal()] != null) {
                     pipe = open[cb.ordinal()];
                     open[cb.ordinal()] = null;
-                    if(cb == DiscordBuild.ANY) // if we pulled this from the 'any' slot, we need to figure out which build it was
+                    if (cb == DiscordBuild.ANY) // if we pulled this from the 'any' slot, we need to figure out which build it was
                     {
-                        for(int k = 0; k < open.length; k++)
-                        {
-                            if(open[k] == pipe)
-                            {
+                        for (int k = 0; k < open.length; k++) {
+                            if (open[k] == pipe) {
                                 pipe.build = DiscordBuild.values()[k];
                                 open[k] = null; // we don't want to close this
                             }
                         }
-                    }
-                    else pipe.build = cb;
+                    } else pipe.build = cb;
 
                     LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
                     break;
                 }
             }
-            if(pipe == null)
-            {
+            if (pipe == null) {
                 throw new NoDiscordClientException();
             }
         }
         // close unused files, except skip 'any' because it's always a duplicate
-        for(int i = 0; i < open.length; i++)
-        {
-            if(i == DiscordBuild.ANY.ordinal())
+        for (int i = 0; i < open.length; i++) {
+            if (i == DiscordBuild.ANY.ordinal())
                 continue;
-            if(open[i] != null)
-            {
+            if (open[i] != null) {
                 try {
                     open[i].close();
-                } catch(Exception ex) {
+                } catch (Exception ex) {
                     // This isn't really important to applications and better
                     // as debug info
                     LOGGER.debug("Failed to close an open IPC pipe!", ex);
@@ -166,22 +155,15 @@ public abstract class Pipe {
     private static Pipe createPipe(IPCClient ipcClient, HashMap<String, Callback> callbacks, String location) {
         String osName = System.getProperty("os.name").toLowerCase();
 
-        if (osName.contains("win"))
-        {
+        if (osName.contains("win")) {
             return new WindowsPipe(ipcClient, callbacks, location);
-        }
-        else if (osName.contains("linux") || osName.contains("mac"))
-        {
+        } else if (osName.contains("linux") || osName.contains("mac")) {
             try {
                 return new UnixPipe(ipcClient, callbacks, location);
-            }
-            catch (IOException e)
-            {
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        }
-        else
-        {
+        } else {
             throw new RuntimeException("Unsupported OS: " + osName);
         }
     }
@@ -189,26 +171,22 @@ public abstract class Pipe {
     /**
      * Sends json with the given {@link Packet.OpCode}.
      *
-     * @param op The {@link Packet.OpCode} to send data with.
-     * @param data The data to send.
+     * @param op       The {@link Packet.OpCode} to send data with.
+     * @param data     The data to send.
      * @param callback callback for the response
      */
-    public void send(Packet.OpCode op, JsonObject data, Callback callback)
-    {
-        try
-        {
+    public void send(Packet.OpCode op, JsonObject data, Callback callback) {
+        try {
             String nonce = generateNonce();
             data.addProperty("nonce", nonce);
             Packet p = new Packet(op, data);
-            if(callback!=null && !callback.isEmpty())
+            if (callback != null && !callback.isEmpty())
                 callbacks.put(nonce, callback);
             write(p.toBytes());
             LOGGER.debug(String.format("Sent packet: %s", p.toString()));
-            if(listener != null)
+            if (listener != null)
                 listener.onPacketSent(ipcClient, p);
-        }
-        catch(IOException ex)
-        {
+        } catch (IOException ex) {
             LOGGER.error("Encountered an IOException while sending a packet and disconnected!");
             status = PipeStatus.DISCONNECTED;
         }
@@ -219,9 +197,7 @@ public abstract class Pipe {
      * read thread encounters bad data.
      *
      * @return A valid {@link Packet}.
-     *
-     * @throws IOException
-     *         If the pipe breaks.
+     * @throws IOException If the pipe breaks.
      */
     public abstract Packet read() throws IOException;
 
@@ -232,56 +208,48 @@ public abstract class Pipe {
      *
      * @return A random {@link UUID}.
      */
-    private static String generateNonce()
-    {
+    private static String generateNonce() {
         return UUID.randomUUID().toString();
     }
 
-    public PipeStatus getStatus()
-    {
+    public PipeStatus getStatus() {
         return status;
     }
 
-    public void setStatus(PipeStatus status)
-    {
+    public void setStatus(PipeStatus status) {
         this.status = status;
     }
 
-    public void setListener(IPCListener listener)
-    {
+    public void setListener(IPCListener listener) {
         this.listener = listener;
     }
 
     public abstract void close() throws IOException;
 
-    public DiscordBuild getDiscordBuild()
-    {
+    public DiscordBuild getDiscordBuild() {
         return build;
     }
 
     // a list of system property keys to get IPC file from different unix systems.
-    private final static String[] unixPaths = {"XDG_RUNTIME_DIR","TMPDIR","TMP","TEMP"};
+    private final static String[] unixPaths = {"XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"};
 
     /**
      * Finds the IPC location in the current system.
      *
      * @param i Index to try getting the IPC at.
-     *
      * @return The IPC location.
      */
-    private static String getPipeLocation(int i)
-    {
-        if(System.getProperty("os.name").contains("Win"))
-            return "\\\\?\\pipe\\discord-ipc-"+i;
+    private static String getPipeLocation(int i, boolean flathub) {
+        if (IS_ON_WINDOWS)
+            return "\\\\?\\pipe\\discord-ipc-" + i;
         String tmppath = null;
-        for(String str : unixPaths)
-        {
+        for (String str : unixPaths) {
             tmppath = System.getenv(str);
-            if(tmppath != null)
+            if (tmppath != null)
                 break;
         }
-        if(tmppath == null)
+        if (tmppath == null)
             tmppath = "/tmp";
-        return tmppath+"/discord-ipc-"+i;
+        return tmppath + (flathub ? "/app/com.discordapp.Discord" : "") + "/discord-ipc-" + i;
     }
 }
