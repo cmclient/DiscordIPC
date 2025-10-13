@@ -10,7 +10,8 @@ Connect locally to the Discord client using IPC for a subset of RPC features lik
 
 - Changed org.json to google gson library
 - Changed logger from slf4j to log4j2
-- Fixed bugs
+- Added support for Discord on Linux downloaded from Flathub
+- Other minor improvements and bugfixes
 
 # Features
 
