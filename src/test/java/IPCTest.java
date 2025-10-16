@@ -2,7 +2,6 @@ import com.jagrosh.discordipc.IPCClient;
 import com.jagrosh.discordipc.IPCListener;
 import com.jagrosh.discordipc.entities.RichPresence;
 import com.jagrosh.discordipc.entities.User;
-import com.jagrosh.discordipc.entities.pipe.PipeStatus;
 import com.jagrosh.discordipc.exceptions.NoDiscordClientException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -13,9 +12,7 @@ import java.util.Random;
 public class IPCTest {
 
     public static void main(String[] args) {
-        final Logger logger = LogManager.getLogger();
-        logger.debug("IPC Test | Debug Test");
-
+        Logger logger = LogManager.getLogger();
         IPCClient client = new IPCClient(345229890980937739L);
 
         client.setListener(new IPCListener() {
@@ -41,26 +38,19 @@ public class IPCTest {
 
             @Override
             public void onActivityJoin(IPCClient client, String secret) {
-                logger.info("IPC onActivityJoin | " + secret);
+                logger.info("IPC onActivityJoin | {}", secret);
             }
 
             @Override
             public void onActivityJoinRequest(IPCClient client, String secret, User user) {
-                logger.info("IPC onActivityJoinRequest | " + secret + " | " + user.getName());
+                logger.info("IPC onActivityJoinRequest | {} | {}", secret, user.getName());
             }
 
             @Override
             public void onActivitySpectate(IPCClient client, String secret) {
-                logger.info("IPC onActivitySpectate | " + secret);
+                logger.info("IPC onActivitySpectate | {}", secret);
             }
         });
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            if (client.getStatus() == PipeStatus.CONNECTED) {
-                logger.info("Shutting down IPC client...");
-                client.close();
-            }
-        }, "IPCClient-ShutdownHook"));
 
         try {
             logger.info("IPC Connecting");
